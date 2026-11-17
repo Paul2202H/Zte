@@ -1,18 +1,8 @@
 
-name: ZTE Family Toolbox - Android APK Build
+name: ZTE Family Toolbox - Build APK
 
 on:
   workflow_dispatch:
-    inputs:
-      build_type:
-        description: APK build type
-        required: true
-        default: debug
-        type: choice
-        options:
-          - debug
-          - release
-
   push:
     branches:
       - main
@@ -22,17 +12,13 @@ on:
 permissions:
   contents: read
 
-concurrency:
-  group: zte-toolbox-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   build:
-    name: Build ZTE Family Toolbox
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -47,66 +33,72 @@ jobs:
           packages: 'platform-tools'
           accept-android-sdk-licenses: true
 
-      - name: Install Android SDK components
+      - name: Install Android SDK
         run: |
           sdkmanager --install \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Verify SDK
-        run: |
-          echo "Android SDK: $ANDROID_HOME"
-          sdkmanager --list_installed
-          adb version
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6
+        with:
+          gradle-version: '8.7'
 
-      - name: Check project files
+      - name: Find Android project
+        shell: bash
         run: |
-          if [ ! -f "./gradlew" ]; then
-            echo "::error::Gradle wrapper not found."
+          PROJECT_SETTINGS=$(find . \
+            -type f \
+            \( -name settings.gradle \
+            -o -name settings.gradle.kts \) \
+            -not -path './.git/*' \
+            | head -n 1)
+
+          if [ -z "$PROJECT_SETTINGS" ]; then
+            echo "::error::No Gradle settings file found."
+            echo "Check that the Android project was uploaded."
             exit 1
           fi
 
-          if [ ! -f "./settings.gradle" ] && \
-             [ ! -f "./settings.gradle.kts" ]; then
-            echo "::error::Gradle settings file not found."
-            exit 1
-          fi
+          PROJECT_DIR=$(dirname "$PROJECT_SETTINGS")
 
-          chmod +x ./gradlew
+          echo "PROJECT_DIR=$PROJECT_DIR" >> "$GITHUB_ENV"
 
-      - name: Validate Gradle
+          echo "Android project found: $PROJECT_DIR"
+          ls -la "$PROJECT_DIR"
+
+      - name: Validate Gradle project
         run: |
-          ./gradlew --version
-          ./gradlew tasks --no-daemon
+          gradle -p "$PROJECT_DIR" tasks \
+            --no-daemon \
+            --stacktrace
 
       - name: Build Debug APK
-        if: github.event_name == 'push' || github.event.inputs.build_type == 'debug'
         run: |
-          ./gradlew clean assembleDebug \
+          gradle -p "$PROJECT_DIR" clean assembleDebug \
             --no-daemon \
             --stacktrace
 
       - name: Upload Debug APK
-        if: github.event_name == 'push' || github.event.inputs.build_type == 'debug'
         uses: actions/upload-artifact@v4
         with:
           name: ZTE-Family-Toolbox-Debug-APK
-          path: app/build/outputs/apk/debug/*.apk
+          path: '**/build/outputs/apk/debug/*.apk'
           if-no-files-found: error
           retention-days: 14
 
       - name: Build Release APK
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
+        if: startsWith(github.ref, 'refs/tags/v')
         run: |
-          ./gradlew assembleRelease \
+          gradle -p "$PROJECT_DIR" assembleRelease \
             --no-daemon \
             --stacktrace
 
       - name: Upload Release APK
-        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
+        if: startsWith(github.ref, 'refs/tags/v')
         uses: actions/upload-artifact@v4
         with:
           name: ZTE-Family-Toolbox-Release-APK
-          path: app/build/outputs/apk/release/*.apk
+          path: '**/build/outputs/apk/release/*.apk'
           if-no-files-found: error
           retention-days: 14
