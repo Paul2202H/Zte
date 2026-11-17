@@ -1,8 +1,18 @@
 
-name: ZTE Family Toolbox - Build APK
+name: ZTE Family Toolbox - Android APK Build
 
 on:
   workflow_dispatch:
+    inputs:
+      build_type:
+        description: APK build type
+        required: true
+        default: debug
+        type: choice
+        options:
+          - debug
+          - release
+
   push:
     branches:
       - main
@@ -12,13 +22,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: zte-toolbox-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
-    name: Validate and Build APKs
+    name: Build ZTE Family Toolbox
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout source
         uses: actions/checkout@v4
 
       - name: Set up JDK 17
@@ -28,42 +42,71 @@ jobs:
           java-version: '17'
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools'
+          accept-android-sdk-licenses: true
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK components
         run: |
           sdkmanager --install \
-            "platform-tools" \
             "platforms;android-34" \
             "build-tools;34.0.0"
 
-      - name: Accept Android licenses
-        run: yes | sdkmanager --licenses || true
+      - name: Verify SDK
+        run: |
+          echo "Android SDK: $ANDROID_HOME"
+          sdkmanager --list_installed
+          adb version
+
+      - name: Check project files
+        run: |
+          if [ ! -f "./gradlew" ]; then
+            echo "::error::Gradle wrapper not found."
+            exit 1
+          fi
+
+          if [ ! -f "./settings.gradle" ] && \
+             [ ! -f "./settings.gradle.kts" ]; then
+            echo "::error::Gradle settings file not found."
+            exit 1
+          fi
+
+          chmod +x ./gradlew
 
       - name: Validate Gradle
         run: |
-          chmod +x ./gradlew
           ./gradlew --version
           ./gradlew tasks --no-daemon
 
       - name: Build Debug APK
-        run: ./gradlew clean assembleDebug --no-daemon
+        if: github.event_name == 'push' || github.event.inputs.build_type == 'debug'
+        run: |
+          ./gradlew clean assembleDebug \
+            --no-daemon \
+            --stacktrace
 
       - name: Upload Debug APK
+        if: github.event_name == 'push' || github.event.inputs.build_type == 'debug'
         uses: actions/upload-artifact@v4
         with:
-          name: ZTE-Family-Toolbox-debug-APK
+          name: ZTE-Family-Toolbox-Debug-APK
           path: app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
+          retention-days: 14
 
       - name: Build Release APK
-        if: startsWith(github.ref, 'refs/tags/v')
-        run: ./gradlew assembleRelease --no-daemon
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
+        run: |
+          ./gradlew assembleRelease \
+            --no-daemon \
+            --stacktrace
 
       - name: Upload Release APK
-        if: startsWith(github.ref, 'refs/tags/v')
+        if: startsWith(github.ref, 'refs/tags/v') || github.event.inputs.build_type == 'release'
         uses: actions/upload-artifact@v4
         with:
-          name: ZTE-Family-Toolbox-release-APK
+          name: ZTE-Family-Toolbox-Release-APK
           path: app/build/outputs/apk/release/*.apk
           if-no-files-found: error
+          retention-days: 14
