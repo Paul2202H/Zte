@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Vendor IDs are only used to auto-launch the app when a matching phone is
+  plugged in over OTG. They are NOT a security boundary; the app still has
+  to complete the full ADB auth handshake before it can do anything, same as
+  the official adb tool does. If a model isn't auto-detected, the user can
+  still open the app first and pick it from the manual device list.
+-->
+<resources>
+    <!-- ZTE -->
+    <usb-device vendor-id="6610" /> <!-- 0x19D2 -->
+    <!-- Nubia (also ships under ZTE's VID on many models; 2A70 covers newer Nubia/RedMagic units) -->
+    <usb-device vendor-id="10864" /> <!-- 0x2A70 -->
+</resources>
